@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace Core;
 
@@ -11,18 +8,26 @@ public sealed record EnvironmentReport(
     string ProcessArchitecture,
     string DetectedRid,
     string ReportedRid,
-    string BaseDirectory
+    string BaseDirectory,
+    string BuildNote
 );
 
 public static class EnvironmentInfo
 {
+#if NET10_0_OR_GREATER
+    const string Note = "збірка під net10.0";
+#else
+    const string Note = "збірка під net8.0";
+#endif
+
     public static EnvironmentReport Collect() => new(
         RuntimeInformation.OSDescription,
         RuntimeInformation.FrameworkDescription,
         RuntimeInformation.ProcessArchitecture.ToString(),
         DetectRid(),
         RuntimeInformation.RuntimeIdentifier,
-        AppContext.BaseDirectory
+        AppContext.BaseDirectory,
+        Note
     );
 
     private static string DetectRid()

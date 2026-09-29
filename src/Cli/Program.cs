@@ -1,18 +1,31 @@
-﻿using Core;
+﻿using Core.Dto;
+using Core.Import;
 
-EnvironmentReport report = EnvironmentInfo.Collect();
+string path = args.Length > 0 ? args[0] : Path.Combine("data", "sample.csv");
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
-Console.WriteLine("CrossApp – практикум з крос-платформного програмування");
-Console.WriteLine("Студент: Келемен Ярослав, група ФЕІ-33с");
-Console.WriteLine(new string('-', 52));
 
-Console.WriteLine($"ОС (OSDescription) : {report.OsDescription}");
-Console.WriteLine($"Runtime : {report.FrameworkDescription}");
-Console.WriteLine($"Архітектура процесу : {report.ProcessArchitecture}");
-Console.WriteLine($"RID (визначено) : {report.DetectedRid}");
-Console.WriteLine($"RID (від .NET) : {report.ReportedRid}");
-Console.WriteLine($"Каталог застосунку : {report.BaseDirectory}");
+if (!File.Exists(path))
+{
+    Console.WriteLine($"Файл не знайдено: {Path.GetFullPath(path)}");
+}
 
-Console.WriteLine(new string('-', 52));
-Console.WriteLine("Предметна область: Замовлення (клієнт, товар, замовлення, рядок замовлення)");
+ImportResult<ProductDto> result = ProductCsvImporter.Load(path);
+
+Console.WriteLine($"Завантажено записів: {result.Items.Count}");
+
+foreach (ProductDto p in result.Items.Take(5))
+{
+    Console.WriteLine($" {p.Id,-10} {p.Name,-35} {p.Price,10:F2}");
+}
+
+if (result.Errors.Count > 0)
+{
+    Console.WriteLine($"\nПропущено рядків: {result.Errors.Count}");
+    foreach (string e in result.Errors)
+    {
+        Console.WriteLine($" ! {e}");
+    }
+}
+
+return 0;
