@@ -10,7 +10,14 @@ if (!File.Exists(path))
     Console.WriteLine($"Файл не знайдено: {Path.GetFullPath(path)}");
 }
 
-ImportResult<ProductDto> result = ProductCsvImporter.Load(path);
+ImportResult<ProductDto> result = Path.GetExtension(path).ToLowerInvariant() switch
+{
+    ".csv" => ProductCsvImporter.Load(path),
+    ".json" => ProductJsonImporter.Load(path),
+
+    
+    var ext => new ImportResult<ProductDto>([], [$"Формат файлу '{ext}' не підтримується"])
+};
 
 Console.WriteLine($"Завантажено записів: {result.Items.Count}");
 
@@ -27,5 +34,14 @@ if (result.Errors.Count > 0)
         Console.WriteLine($" ! {e}");
     }
 }
+
+int accepted = result.Items.Count;
+int skipped = result.Errors.Count;
+int total = accepted + skipped;
+
+double errorPercent = total > 0 ? (double)skipped / total * 100 : 0;
+
+Console.WriteLine($"\nСтатистика: усього {total} / прийнято {accepted} / " +
+    $"пропущено {skipped} / {errorPercent:F1}% помилок");
 
 return 0;
