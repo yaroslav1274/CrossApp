@@ -1,47 +1,36 @@
-﻿using Core.Dto;
-using Core.Import;
+﻿using Core.Domain;
 
-string path = args.Length > 0 ? args[0] : Path.Combine("data", "sample.csv");
+Console.WriteLine("=== Сценарій 1: Успіх ===");
+Order order = Order.Create("ORD-001", "Група ФЕІ-33с");
+order.AddLine("PRD-1", "Ноутбук", 25000m, 1);
+order.AddLine("PRD-2", "Миша", 800m, 2);
+Console.WriteLine(order);
+order.Confirm();
+Console.WriteLine(order);
 
-Console.OutputEncoding = System.Text.Encoding.UTF8;
-
-if (!File.Exists(path))
+Console.WriteLine("\n=== Сценарій 2: Порушення інваріантів ===");
+TryDo("Додавання рядка до підтвердженого замовлення", () => order.AddLine("PRD-3", "Клавіатура", 1500m, 1));
+TryDo("Створення замовлення без клієнта", () => Order.Create("ORD-002", "  "));
+TryDo("Від'ємна кількість товару", () =>
 {
-    Console.WriteLine($"Файл не знайдено: {Path.GetFullPath(path)}");
-}
-
-ImportResult<ProductDto> result = Path.GetExtension(path).ToLowerInvariant() switch
+    var invalidOrder = Order.Create("ORD-003", "Клієнт B");
+    invalidOrder.AddLine("PRD-1", "Монітор", 5000m, -5);
+});
+TryDo("Підтвердження порожнього замовлення", () =>
 {
-    ".csv" => ProductCsvImporter.Load(path),
-    ".json" => ProductJsonImporter.Load(path),
+    var emptyOrder = Order.Create("ORD-004", "Клієнт C");
+    emptyOrder.Confirm();
+});
 
-    
-    var ext => new ImportResult<ProductDto>([], [$"Формат файлу '{ext}' не підтримується"])
-};
-
-Console.WriteLine($"Завантажено записів: {result.Items.Count}");
-
-foreach (ProductDto p in result.Items.Take(5))
+static void TryDo(string title, Action action)
 {
-    Console.WriteLine($" {p.Id,-10} {p.Name,-35} {p.Price,10:F2}");
-}
-
-if (result.Errors.Count > 0)
-{
-    Console.WriteLine($"\nПропущено рядків: {result.Errors.Count}");
-    foreach (string e in result.Errors)
+    try
     {
-        Console.WriteLine($" ! {e}");
+        action();
+        Console.WriteLine($" [!] {title}: виняток НЕ спрацював — інваріант відсутній!");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($" [X] {title}: {ex.GetType().Name} - {ex.Message}");
     }
 }
-
-int accepted = result.Items.Count;
-int skipped = result.Errors.Count;
-int total = accepted + skipped;
-
-double errorPercent = total > 0 ? (double)skipped / total * 100 : 0;
-
-Console.WriteLine($"\nСтатистика: усього {total} / прийнято {accepted} / " +
-    $"пропущено {skipped} / {errorPercent:F1}% помилок");
-
-return 0;
