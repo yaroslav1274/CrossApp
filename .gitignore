@@ -480,3 +480,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Лабораторна 5: локальне файлове сховище
+/data/orders.json
+/data/orders.json.tmp
