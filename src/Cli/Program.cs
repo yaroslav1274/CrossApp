@@ -5,8 +5,21 @@ using Core.Services;
 using Core.Domain;
 using Core.Dto;
 using Core.Import;
+using Core.Events;
+using Cli.Notifications;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+if (args.Contains("--lab06-extra"))
+{
+    RunLab06Extras();
+    return 0;
+}
+if (args.Contains("--lab06"))
+{
+    RunLab06();
+    return 0;
+}
 
 if (args.Contains("--lab05-extra"))
 {
@@ -117,6 +130,7 @@ static void TryDo(string title, Action action)
         Console.WriteLine($"[OK] {title}: {ex.GetType().Name} — {ex.Message}");
     }
 }
+
 static void RunLab05(string[] arguments)
 {
     string path = Path.Combine(ProjectRoot(), "data", "orders.json");
@@ -130,7 +144,7 @@ static void RunLab05(string[] arguments)
     if (arguments.Contains("--cache") && !arguments.Contains("--factory"))
         store = new CachingOrderStore(store);
 
-    var service = new OrderService(store);
+    var service = new OrderService(store); 
     Console.WriteLine("=== Лабораторна 5: сервіс і два сховища ===");
     Console.WriteLine($"Реалізація: {store.GetType().Name}");
     Console.WriteLine($"Режим: {(useFile ? "Файл JSON" : "Пам'ять")}");
@@ -199,4 +213,97 @@ static string ProjectRoot()
         }
     }
     return Directory.GetCurrentDirectory();
+}
+
+static void RunLab06()
+{
+    Console.WriteLine("=== Лабораторна №6: події замовлень ===");
+    var service = new OrderService(new InMemoryOrderStore());
+    string logPath = Path.Combine(ProjectRoot(), "logs", "app.log");
+    Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+    File.WriteAllText(logPath, string.Empty);
+    Console.WriteLine($"Журнал: {logPath}");
+
+    int changes = 0;
+    void OnOrderChanged(object? sender, OrderChangedEventArgs e)
+    {
+        string line = $"{e.At:HH:mm:ss} {e.Kind,-14} {e.OrderId} " +
+                      $"позицій={e.LinesCount} сума={e.Total:F2}";
+        Console.WriteLine("[EVENT] " + line);
+        try
+        {
+            File.AppendAllText(logPath, line + Environment.NewLine);
+        }
+        catch (IOException ex)
+        {
+            Console.WriteLine($"[LOG] Не вдалося записати повідомлення: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Console.WriteLine($"[LOG] Немає доступу до журналу: {ex.Message}");
+        }
+    }
+
+    EventHandler<OrderChangedEventArgs> counter = (_, _) => changes++;
+    service.Changed += OnOrderChanged;
+    service.Changed += counter;
+
+    Order order = service.CreateOrder("CLIENT-LAB06");
+    service.AddLine(order.Id, "P-101", "Ноутбук", 25000m, 1);
+    service.AddLine(order.Id, "P-102", "Миша", 800m, 2);
+    service.Confirm(order.Id);
+    Console.WriteLine($"Подій отримано лічильником: {changes}");
+    int logBefore = File.ReadAllLines(logPath).Length;
+    Console.WriteLine($"Рядків у журналі до відписки: {logBefore}");
+
+    Console.WriteLine("\n=== Відмова: жодної нової події ===");
+    int beforeFailure = changes;
+    TryDo("додати позицію до Confirmed", () =>
+        service.AddLine(order.Id, "P-X", "Заборонений товар", 100m, 1));
+    Console.WriteLine($"Лічильник до/після відмови: {beforeFailure}/{changes}");
+
+    Console.WriteLine("\n=== Відписка лише логера ===");
+    service.Changed -= OnOrderChanged;
+    service.Cancel(order.Id);
+    int logAfter = File.ReadAllLines(logPath).Length;
+    Console.WriteLine($"Статус після Cancel: {service.Find(order.Id)!.Status}");
+    Console.WriteLine($"Подій у лічильнику після відписки логера: {changes}");
+    Console.WriteLine($"Рядків у журналі після відписки: {logAfter} (було {logBefore})");
+    service.Changed -= counter;
+
+    Console.WriteLine("\n=== FindAll(Func<Order,bool>) ===");
+    var results = service.FindAll(o => o.Total > 500m);
+    Console.WriteLine($"Замовлень із сумою понад 500: {results.Count}");
+    foreach (var found in results)
+        Console.WriteLine($" {found.Id} {found.Status} {found.Total:F2}");
+}
+
+static void RunLab06Extras()
+{
+    Console.WriteLine("=== Додаткове 1: INotificationSink (ручний DI) ===");
+    var consoleService = new OrderService(new InMemoryOrderStore(), new ConsoleSink());
+    var consoleOrder = consoleService.CreateOrder("CLIENT-SINK-CONSOLE");
+    consoleService.AddLine(consoleOrder.Id, "P-201", "Монітор", 6500m, 1);
+
+    string sinkPath = Path.Combine(ProjectRoot(), "logs", "notifications.log");
+    Directory.CreateDirectory(Path.GetDirectoryName(sinkPath)!);
+    File.WriteAllText(sinkPath, string.Empty);
+    var fileService = new OrderService(new InMemoryOrderStore(), new FileSink(sinkPath));
+    var fileOrder = fileService.CreateOrder("CLIENT-SINK-FILE");
+    fileService.AddLine(fileOrder.Id, "P-202", "Клавіатура", 1800m, 1);
+    Console.WriteLine($"FileSink записав рядків: {File.ReadAllLines(sinkPath).Length}");
+    Console.WriteLine($"Файл FileSink: {sinkPath}");
+    Console.WriteLine("Подія допускає кількох підписників +=/-=; sink задається через конструктор.");
+
+    Console.WriteLine("\n=== Додаткове 2: Action<string> для пропущених рядків CSV ===");
+    string csvPath = Path.Combine(ProjectRoot(), "data", "sample.csv");
+    int reported = 0;
+    var result = ProductCsvImporter.Load(csvPath, error =>
+    {
+        reported++;
+        Console.WriteLine("[SKIPPED] " + error);
+    });
+    Console.WriteLine($"Імпортовано: {result.Items.Count}; " +
+                      $"помилок у ImportResult: {result.Errors.Count}; " +
+                      $"викликів Action<string>: {reported}");
 }
